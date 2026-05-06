@@ -1,9 +1,9 @@
 {
   "name": "ScanVault - QR Code Scanner",
   "short_name": "ScanVault",
-  "description": "Sichere QR-Code-Scanner und Verwaltung mit lokalem Speicher",
-  "start_url": "/scanvault/"
-  "scope": "/",
+  "description": "Secure QR Code Scanner and Management with Local Storage",
+  "start_url": "/scanvault/",
+  "scope": "/scanvault/",
   "display": "standalone",
   "orientation": "portrait-primary",
   "theme_color": "#0a0a0f",
@@ -33,10 +33,10 @@
   ],
   "shortcuts": [
     {
-      "name": "QR-Code scannen",
-      "short_name": "Scannen",
-      "description": "Öffne die Scanner-Seite",
-      "url": "/?tab=scanner",
+      "name": "Scan QR Code",
+      "short_name": "Scan",
+      "description": "Open Scanner Page",
+      "url": "/scanvault/?tab=scanner",
       "icons": [
         {
           "src": "data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 192 192'><rect fill='%237cfc8a'/><circle cx='96' cy='96' r='40' fill='%230a0a0f'/><circle cx='96' cy='96' r='32' fill='%237cfc8a'/></svg>",
