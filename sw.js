@@ -1,9 +1,10 @@
 // Service Worker für ScanVault PWA
-const CACHE_NAME = 'scanvault-v3.1';
+const CACHE_NAME = 'scanvault-v3.2';
+// Relativ zum Scope, damit die App unter jedem Deploy-Pfad funktioniert.
 const URLS_TO_CACHE = [
-  '/scanvault/',
-  '/scanvault/index.html',
-  '/scanvault/manifest.json',
+  './',
+  './index.html',
+  './manifest.json',
   'https://fonts.googleapis.com/css2?family=DM+Mono:wght@400;500&family=Syne:wght@400;600;700;800&display=swap',
   'https://cdnjs.cloudflare.com/ajax/libs/html2pdf.js/0.10.1/html2pdf.bundle.min.js',
   'https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.min.js'
@@ -12,11 +13,10 @@ const URLS_TO_CACHE = [
 // Installation
 self.addEventListener('install', event => {
   event.waitUntil(
-    caches.open(CACHE_NAME).then(cache => {
-      return cache.addAll(URLS_TO_CACHE).catch(() => {
-        return Promise.resolve();
-      });
-    })
+    caches.open(CACHE_NAME).then(cache =>
+      // Einzeln cachen: bei addAll() lässt eine fehlschlagende URL alles scheitern.
+      Promise.all(URLS_TO_CACHE.map(url => cache.add(url).catch(() => {})))
+    )
   );
   self.skipWaiting();
 });
@@ -40,6 +40,8 @@ self.addEventListener('activate', event => {
 // Fetch (Network first, fallback to cache)
 self.addEventListener('fetch', event => {
   if (event.request.method !== 'GET') return;
+  // chrome-extension: & Co. lassen cache.put() werfen.
+  if (!event.request.url.startsWith('http')) return;
 
   event.respondWith(
     fetch(event.request)

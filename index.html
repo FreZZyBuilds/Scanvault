@@ -911,6 +911,23 @@ let scans = JSON.parse(localStorage.getItem('scanvault') || '[]');
 let stream = null;
 let scanning = false;
 let lastScanTime = 0;
+let detector = null;
+let detecting = false;
+const scanCanvas = document.createElement('canvas');
+
+function save() {
+  try {
+    localStorage.setItem('scanvault', JSON.stringify(scans));
+  } catch (e) {
+    showToast('❌ Storage full — export and delete old scans');
+  }
+}
+
+function escapeHtml(str) {
+  return String(str).replace(/[&<>"']/g, c => ({
+    '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;'
+  })[c]);
+}
 
 function showWelcome() {
   const hasSeenWelcome = localStorage.getItem('scanvault-welcome-seen');
@@ -951,7 +968,12 @@ function formatLast6(raw) {
 }
 
 async function startScanner() {
+  if (!('BarcodeDetector' in window)) {
+    showToast('❌ Camera scanning not supported — use manual input');
+    return;
+  }
   try {
+    detector = detector || new BarcodeDetector({ formats: ['qr_code'] });
     stream = await navigator.mediaDevices.getUserMedia({
       video: { facingMode: 'environment' },
       audio: false
@@ -987,69 +1009,58 @@ function stopScanner() {
 function scanFrame() {
   if (!scanning) return;
   const video = document.getElementById('video');
-  if (video.readyState === video.HAVE_ENOUGH_DATA) {
-    const canvas = document.createElement('canvas');
-    canvas.width = video.videoWidth;
-    canvas.height = video.videoHeight;
-    const ctx = canvas.getContext('2d');
-    ctx.drawImage(video, 0, 0);
-    
-    if ('BarcodeDetector' in window) {
-      new BarcodeDetector({ formats: ['qr_code'] })
-        .detect(canvas)
-        .then(barcodes => {
-          if (barcodes.length > 0) {
-            const now = Date.now();
-            if (now - lastScanTime > 2000) {
-              lastScanTime = now;
-              processScan(barcodes[0].rawValue);
-            }
+
+  // Nur ein Frame gleichzeitig in Bearbeitung, sonst stapeln sich die Promises.
+  if (!detecting && video.readyState === video.HAVE_ENOUGH_DATA) {
+    scanCanvas.width = video.videoWidth;
+    scanCanvas.height = video.videoHeight;
+    scanCanvas.getContext('2d').drawImage(video, 0, 0);
+
+    detecting = true;
+    detector.detect(scanCanvas)
+      .then(barcodes => {
+        if (barcodes.length > 0) {
+          const now = Date.now();
+          if (now - lastScanTime > 2000) {
+            lastScanTime = now;
+            processScan(barcodes[0].rawValue);
           }
-        })
-        .catch(() => {});
-    }
+        }
+      })
+      .catch(() => {})
+      .finally(() => { detecting = false; });
   }
   requestAnimationFrame(scanFrame);
 }
 
 function processScan(code) {
   if (!code) return;
-  
-  const scan = {
+
+  const now = new Date();
+  const formatted = formatLast6(code);
+
+  scans.unshift({
     code: code,
-    time: new Date().toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit', second: '2-digit' }),
-    date: new Date().toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' })
-  };
-  
-  scans.unshift(scan);
-  localStorage.setItem('scanvault', JSON.stringify(scans));
-  
-  document.getElementById('result-6').textContent = formatLast6(code);
+    time: now.toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit', second: '2-digit' }),
+    date: now.toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' })
+  });
+  save();
+
+  document.getElementById('result-6').textContent = formatted;
   document.getElementById('result-full').textContent = code;
   document.getElementById('scan-result').classList.add('visible');
-  
-  showToast('✓ QR Code Scanned');
+
+  showToast('✓ Saved: ' + formatted);
   updateCounts();
+  if (document.getElementById('screen-history').classList.contains('active')) renderList();
 }
 
 function manualScan() {
   const input = document.getElementById('manual-input');
-  if (input.value.trim()) {
-    const code = input.value.trim();
-    const formatted = formatLast6(code);
-    scans.unshift({ 
-      code: code,
-      time: new Date().toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit', second: '2-digit' }),
-      date: new Date().toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' })
-    });
-    save();
-    updateCounts();
-    document.getElementById('result-7').textContent = formatted;
-    document.getElementById('result-full').textContent = code;
-    document.getElementById('scan-result').classList.add('visible');
-    showToast('✓ Saved: ' + formatted);
-    input.value = '';
-  }
+  const code = input.value.trim();
+  if (!code) return;
+  processScan(code);
+  input.value = '';
 }
 
 function updateCounts() {
@@ -1072,9 +1083,9 @@ function renderList() {
   list.innerHTML = scans.map((scan, idx) => `
     <div class="scan-item">
       <div style="flex:1">
-        <div class="scan-code">${formatLast6(scan.code)}</div>
-        <div style="font-size:11px;color:var(--muted);margin-top:6px;word-break:break-all;font-family:var(--mono)">${scan.code}</div>
-        <div style="font-size:12px;color:var(--muted);margin-top:4px">${scan.date} • ${scan.time}</div>
+        <div class="scan-code">${escapeHtml(formatLast6(scan.code))}</div>
+        <div style="font-size:11px;color:var(--muted);margin-top:6px;word-break:break-all;font-family:var(--mono)">${escapeHtml(scan.code)}</div>
+        <div style="font-size:12px;color:var(--muted);margin-top:4px">${escapeHtml(scan.date)} • ${escapeHtml(scan.time)}</div>
       </div>
       <button class="copy-btn" onclick="copyScan(${idx})">Copy</button>
     </div>
@@ -1105,7 +1116,7 @@ function copyAll() {
 function clearAll() {
   if (confirm('Delete all scans? This cannot be undone.')) {
     scans = [];
-    localStorage.setItem('scanvault', JSON.stringify(scans));
+    save();
     renderList();
     updateCounts();
     showToast('✓ All scans deleted');
@@ -1159,6 +1170,16 @@ function showToast(message) {
 // Initialize
 showWelcome();
 updateCounts();
+
+// PWA-Shortcut: ?tab=scanner öffnet direkt den passenden Screen
+const requestedTab = new URLSearchParams(location.search).get('tab');
+if (['home', 'scanner', 'history'].includes(requestedTab)) switchTab(requestedTab);
+
+if ('serviceWorker' in navigator) {
+  window.addEventListener('load', () => {
+    navigator.serviceWorker.register('sw.js').catch(() => {});
+  });
+}
 </script>
 </body>
 </html>
